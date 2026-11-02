@@ -347,7 +347,7 @@ def run_evaluator_from_config(config: InferenceEvaluatorConfig):
         makedirs(config.experiment_dir, exist_ok=True)
         config.configure_logging(log_filename="inference_out.log")
 
-        if fme.using_gpu():
+        if fme.using_gpu() and torch.cuda.is_available():
             torch.backends.cudnn.benchmark = True
 
         dist = Distributed.get_instance()

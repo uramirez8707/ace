@@ -611,7 +611,9 @@ class Distributed:
         drain.
         """
         if using_gpu():
-            torch.cuda.synchronize()
-
+            if hasattr(torch, "xpu") and torch.xpu.is_available():
+                torch.xpu.synchronize()
+            elif torch.cuda.is_available():
+                torch.cuda.synchronize()
 
 singleton: Distributed | None = None

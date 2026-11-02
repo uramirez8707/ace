@@ -14,7 +14,7 @@ from fme.coupled.train.train_config import TrainConfig
 
 def run_train(config: TrainConfig):
     dist = Distributed.get_instance()
-    if fme.using_gpu():
+    if fme.using_gpu() and torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
     if not os.path.isdir(config.experiment_dir):
         os.makedirs(config.experiment_dir, exist_ok=True)

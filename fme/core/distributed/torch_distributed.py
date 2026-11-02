@@ -53,11 +53,12 @@ class TorchDistributed(DistributedBackend):
         # on the main thread at its next sync of that work, so the watchdog
         # is downgraded to logging. Read once, at process group construction.
         os.environ.setdefault("TORCH_NCCL_RETHROW_CUDA_ERRORS", "0")
-        if "RANK" in os.environ and not using_srun():  # we were executed with torchrun
+        if "RANK" in os.environ and not using_srun():  # we were executed with torchrun or mpiexec
             if not torch.distributed.is_initialized():
                 if using_gpu():
+                    dist_backend = "xccl" if (hasattr(torch, "xpu") and torch.xpu.is_available()) else "nccl"
                     torch.distributed.init_process_group(
-                        backend="nccl",
+                        backend=dist_backend,
                         init_method="env://",
                         timeout=timedelta(minutes=30),
                     )
@@ -72,12 +73,20 @@ class TorchDistributed(DistributedBackend):
             self._rank = torch.distributed.get_rank()
             if using_gpu():
                 self._device_id = local_rank
-                torch.cuda.set_device(self._device_id)
+                if hasattr(torch, "xpu") and torch.xpu.is_available():
+                    target_device = 0 if torch.xpu.device_count() == 1 else self._device_id
+                    torch.xpu.set_device(target_device)
+                else:
+                    torch.cuda.set_device(self._device_id)
         elif using_srun():  # executing with srun
             shared_dist_file = os.environ["SRUN_DIST_FILE_PATH"]
             self._rank = int(os.environ["SLURM_PROCID"])
             self.world_size = int(os.environ["SLURM_NTASKS"])
-            backend = "nccl" if using_gpu() else "gloo"
+            if using_gpu():
+                backend = "xccl" if (hasattr(torch, "xpu") and torch.xpu.is_available()) else "nccl"
+            else:
+                backend = "gloo"
+
             torch.distributed.init_process_group(
                 backend=backend,
                 init_method=f"file://{shared_dist_file}",
@@ -87,9 +96,10 @@ class TorchDistributed(DistributedBackend):
             )
             if using_gpu():
                 # this assumes one GPU per process in the SLURM setting
-                # --gpus-per-task=1 --gpu-bind=closest
-                self._device_id = 0
-                torch.cuda.set_device(self._device_id)
+                if hasattr(torch, "xpu") and torch.xpu.is_available():
+                    torch.xpu.set_device(0 if torch.xpu.device_count() == 1 else self.rank % 12)
+                else:
+                    torch.cuda.set_device(0)
         else:
             raise ValueError(
                 "Distributed backend initialized without torchrun or srun."

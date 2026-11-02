@@ -29,7 +29,7 @@ def force_cpu(force: bool = True) -> Generator[None, None, None]:
 
 
 def using_gpu() -> bool:
-    return get_device().type == "cuda"
+    return get_device().type in ("cuda", "xpu")
 
 
 def using_srun() -> bool:
@@ -50,6 +50,8 @@ def get_device() -> torch.device:
     """
     if _FORCE_CPU:
         return torch.device("cpu")
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return torch.device("xpu", torch.xpu.current_device())
     if torch.cuda.is_available():
         return torch.device("cuda", torch.cuda.current_device())
     else:

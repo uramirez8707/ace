@@ -156,7 +156,11 @@ class ModelTorchDistributed(DistributedBackend):
 
         if using_gpu():
             self._device_id = self._local_rank
-            torch.cuda.set_device(self._device_id)
+            if hasattr(torch, "xpu") and torch.xpu.is_available():
+                target_device = 0 if torch.xpu.device_count() == 1 else self._device_id
+                torch.xpu.set_device(target_device)
+            elif torch.cuda.is_available():
+                torch.cuda.set_device(self._device_id)
 
         if not thd.is_initialized():
             thd.init(self._h_group, self._w_group)

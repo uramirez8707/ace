@@ -445,11 +445,18 @@ class DistributedManager:
                 manager._local_rank = local_rank
 
         force_cpu = os.environ.get("FME_FORCE_CPU", "0") == "1"
-        manager._device = torch.device(
-            f"cuda:{manager.local_rank}"
-            if (torch.cuda.is_available() and not force_cpu)
-            else "cpu"
-        )
+        is_xpu = hasattr(torch, "xpu") and torch.xpu.is_available() and not force_cpu
+        is_cuda = torch.cuda.is_available() and not force_cpu
+
+        if is_xpu:
+            dev_idx = 0 if torch.xpu.device_count() == 1 else manager.local_rank
+            manager._device = torch.device(f"xpu:{dev_idx}")
+        elif is_cuda:
+            manager._device = torch.device(f"cuda:{manager.local_rank}")
+        else:
+            manager._device = torch.device("cpu")
+
+        backend = "xccl" if is_xpu else ("nccl" if is_cuda else "gloo")
 
         if manager._distributed:
             # Setup distributed process group.
@@ -476,11 +483,14 @@ class DistributedManager:
                     world_size=manager.world_size,
                 )
 
-        if torch.cuda.is_available() and os.environ.get("FME_FORCE_CPU", "0") != "1":
-            # Set device for this process and empty cache to optimize memory usage
-            torch.cuda.set_device(manager.device)
-            torch.cuda.device(manager.device)
-            torch.cuda.empty_cache()
+        if os.environ.get("FME_FORCE_CPU", "0") != "1":
+            if hasattr(torch, "xpu") and torch.xpu.is_available():
+                target_dev = 0 if torch.xpu.device_count() == 1 else manager.device
+                torch.xpu.set_device(target_dev)
+                torch.xpu.empty_cache()
+            elif torch.cuda.is_available():
+                torch.cuda.set_device(manager.device)
+                torch.cuda.empty_cache()
 
         manager._initialization_method = method
 

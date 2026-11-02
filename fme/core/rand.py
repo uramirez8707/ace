@@ -30,7 +30,9 @@ def set_seed(seed: int):
     np.random.seed(seed + 1)
     random.seed(seed + 2)
     torch.manual_seed(seed + 3)
-    if torch.cuda.is_available():
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        torch.xpu.manual_seed_all(seed + 4)
+    elif torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed + 4)
     dist = Distributed.get_instance()
     dist.set_seed(seed + 5)
